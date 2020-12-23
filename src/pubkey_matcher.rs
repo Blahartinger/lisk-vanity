@@ -3,6 +3,9 @@ use num_traits::pow;
 
 use derivation::pubkey_to_address;
 
+use ::*;
+
+
 // largest valid address
 pub fn max_address(max_len: usize) -> u64 {
     if max_len >= 20 {
@@ -25,14 +28,19 @@ impl PubkeyMatcher {
         }
     }
 
-    pub fn matches(&self, pubkey: &[u8; 32]) -> bool {
-        let address = pubkey_to_address(pubkey);
+    pub fn matches(&self, pubkey: &[u8; 32], params: &ThreadParams) -> bool {
+        let encoded = bs58::encode(pubkey).into_string();
+        
+    	return encoded.starts_with(&params.vanity_name[..]) 
+    	
+    
+        //let address = pubkey_to_address(pubkey);
         // longest address: 18446744073709551615 (20 chars)
         //
         // Example max_len = 15
         // Short address: 999999999999999 (15 chars)
         // Strict upper bound = 10^15 = 1000000000000000
-        return address <= self.max_address_value;
+        //return address <= self.max_address_value;
     }
 
     pub fn estimated_attempts(&self) -> BigInt {

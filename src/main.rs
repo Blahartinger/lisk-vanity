@@ -70,26 +70,26 @@ fn print_solution(
         println!(
             "{} {}",
             hex::encode_upper(&secret_key_material as &[u8]),
-            pubkey_to_address(&public_key),
+            full_address(public_key, secret_key_material)
         );
     } else {
         match secret_key_type {
             GenerateKeyType::LiskPassphrase => println!(
                 "Found matching account!\nPrivate Key: {}\nAddress:     {}",
                 String::from_utf8(entropy_to_mnemonic(cut_last_16(&secret_key_material))).unwrap(),
-                full_address(pubkey_to_address(&public_key)),
+                full_address(public_key, secret_key_material),
             ),
             GenerateKeyType::PrivateKey => println!(
                 "Found matching account!\nPrivate Key: {}{}\nAddress:     {}",
                 hex::encode_upper(&secret_key_material as &[u8]),
                 hex::encode_upper(&public_key),
-                full_address(pubkey_to_address(&public_key)),
+                full_address(public_key, secret_key_material),
             ),
         }
     }
 }
 
-struct ThreadParams {
+struct ThreadParams{
     limit: usize,
     found_n: Arc<AtomicUsize>,
     output_progress: bool,
@@ -97,15 +97,18 @@ struct ThreadParams {
     simple_output: bool,
     generate_key_type: GenerateKeyType,
     matcher: Arc<PubkeyMatcher>,
+    vanity_name: String,
 }
 
-fn full_address(address: u64) -> String {
-    return format!("{}L", address);
+fn full_address(public_key: [u8; 32], secret_key_material: [u8; 32],) -> String {
+ 	let encodedPublicKey = bs58::encode(public_key).into_string();
+	let encodedPrivateKey = bs58::encode(secret_key_material).into_string();
+	return format!("{} {}", encodedPublicKey, encodedPrivateKey);
 }
 
 fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
     let public_key = secret_to_pubkey(key_material, params.generate_key_type);
-    let matches = params.matcher.matches(&public_key);
+    let matches = params.matcher.matches(&public_key, params);
     if matches {
         if params.output_progress {
             eprintln!("");
@@ -133,7 +136,7 @@ fn main() {
         .arg(
             clap::Arg::with_name("length")
                 .value_name("LENGTH")
-                .default_value("14")
+                .default_value("32")
                 .required_unless("suffix")
                 .help("The max length for the address"),
         )
@@ -163,6 +166,12 @@ fn main() {
                 .value_name("N")
                 .default_value("1")
                 .help("Generate N addresses, then exit (0 for infinite)"),
+        ).arg(
+            clap::Arg::with_name("vanity_name")
+                .short("x")
+                .default_value("")
+                .long("limit")
+                .help("search for a vanity name in public key"),
         )
         .arg(
             clap::Arg::with_name("gpu_threads")
@@ -222,6 +231,7 @@ fn main() {
     let output_progress = !args.is_present("no_progress");
     let simple_output = args.is_present("simple_output");
     let _generate_passphrase = args.is_present("generate_passphrase");
+    let vanity_name = String::from(args.value_of("vanity_name").unwrap());
 
     let gen_key_type;
     if args.is_present("generate_keypair") {
@@ -248,6 +258,7 @@ fn main() {
             matcher: matcher_base.clone(),
             found_n: found_n_base.clone(),
             attempts: attempts_base.clone(),
+            vanity_name: vanity_name.clone(),
         };
         thread_handles.push(thread::spawn(move || loop {
             if check_solution(&params, key_or_seed) {
@@ -295,6 +306,7 @@ fn main() {
             matcher: matcher_base.clone(),
             found_n: found_n_base.clone(),
             attempts: attempts_base.clone(),
+            vanity_name: vanity_name.clone(),
         };
         let mut gpu = Gpu::new(
             gpu_platform,
@@ -305,6 +317,7 @@ fn main() {
             gen_key_type,
         )
         .unwrap();
+        
         gpu_thread = Some(thread::spawn(move || {
             let mut rng = OsRng::new().expect("Failed to get RNG for seed");
             loop {
